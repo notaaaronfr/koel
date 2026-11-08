@@ -69,3 +69,43 @@ def summarise() -> pd.DataFrame:
     print("\nAUROC shown only where both classes have >= 5 variants.")
     print("Population negatives flatter AlphaMissense (trained with population data as benign).")
     return res
+
+
+def lab_tested() -> pd.DataFrame:
+    """Compare predictors against lab-measured function (MaveDB, CC0)."""
+    from scipy.stats import spearmanr
+
+    from .enrich import load_esm1b
+    from .mave import all_assays
+    from .table import gene_to_uniprot, load_alphamissense
+
+    mave, stats = all_assays()
+    mapping = gene_to_uniprot(sorted(mave["gene"].unique()))
+    mave["uniprot_id"] = mave["gene"].map(mapping)
+    acc = set(mave["uniprot_id"])
+    am = load_alphamissense(acc).rename(columns={"protein_variant": "variant"})
+    d = (mave.merge(am, on=["uniprot_id", "variant"], how="inner")
+             .merge(load_esm1b(acc), on=["uniprot_id", "variant"], how="inner"))
+    d.to_parquet(PROCESSED / "lab_tested.parquet", index=False)
+
+    for gene, var in [("TP53", "R175H"), ("PTEN", "C124S"), ("BRCA1", "C61G")]:
+        r = d[(d.gene == gene) & (d.variant == var)]
+        print(f"check {gene} {var}: lab label = {r['mave_label'].tolist()}")
+
+    rows = []
+    for gene, g in d.groupby("gene"):
+        lab = g[g["mave_label"].notna()]
+        y = lab["mave_label"].astype(int).to_numpy()
+        for name, (col, sign) in PREDICTORS.items():
+            auc, lo, hi = _boot_auc(y, sign * lab[col].to_numpy())
+            rho = spearmanr(sign * g[col], g["mave_score_signed"]).statistic
+            rows.append({"gene": gene, "predictor": name, "n_damaging": int(y.sum()),
+                         "n_normal": int((y == 0).sum()), "auroc": auc,
+                         "ci_low": lo, "ci_high": hi, "spearman_vs_lab": rho})
+    res = pd.DataFrame(rows)
+    res.to_csv(PROCESSED / "lab_tested_auroc.csv", index=False)
+    stats.to_csv(PROCESSED / "lab_tested_assays.csv", index=False)
+    with pd.option_context("display.float_format", "{:.3f}".format):
+        print(res.to_string(index=False))
+    print("\nAll three genes are tumour suppressors (brakes); labels are functional, not oncogenicity.")
+    return res

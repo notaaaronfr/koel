@@ -154,6 +154,19 @@ SOURCES.append(
     )
 )
 
+SOURCES.append(
+    Source(
+        key="mavedb",
+        group="mavedb",
+        url="https://api.mavedb.org/api/v1/score-sets/<URN>/scores",
+        filename="mavedb/<URN>.csv",
+        licence="CC0 1.0 (checked per score set at download time)",
+        redistributable=True,
+        approx_size="~1 MB per assay",
+        notes="Lab-measured variant function: TP53 (00001213-a-1), PTEN (00000054-a-1), BRCA1 (00000097-0-2).",
+    )
+)
+
 # Sources still to be chosen, with the licence question that must be settled first.
 PENDING = {
     "structures": "AlphaFold DB (CC BY 4.0) for residue coordinates and pLDDT.",

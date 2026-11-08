@@ -44,6 +44,9 @@ def main(argv: list[str] | None = None) -> int:
     a = sub.add_parser("analyse", help="first per-gene-class AlphaMissense AUROC")
     a.set_defaults(func=lambda a: (__import__("koel.analysis", fromlist=["summarise"]).summarise(), 0)[1])
 
+    lt = sub.add_parser("lab", help="compare predictors with lab-measured function (TP53, PTEN, BRCA1)")
+    lt.set_defaults(func=lambda a: (__import__("koel.analysis", fromlist=["lab_tested"]).lab_tested(), 0)[1])
+
     args = p.parse_args(argv)
     return args.func(args)
 
