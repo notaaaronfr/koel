@@ -109,3 +109,74 @@ def lab_tested() -> pd.DataFrame:
         print(res.to_string(index=False))
     print("\nAll three genes are tumour suppressors (brakes); labels are functional, not oncogenicity.")
     return res
+
+
+AM_RELEASE = pd.Timestamp("2023-09-19")
+# Thresholds: AlphaMissense developer "likely pathogenic" (0.564) and the stricter
+# ClinGen-calibrated cut-off reported for germline PP3 (0.792); ESM1b LLR -7.5
+# (Brandes et al. 2023). Germline calibrations, used here only as reference points.
+THRESHOLDS = [("AlphaMissense", "am_pathogenicity", ">=", 0.564),
+              ("AlphaMissense", "am_pathogenicity", ">=", 0.792),
+              ("ESM1b", "esm1b_llr", "<=", -7.5)]
+
+
+def _wilson(k: int, n: int, z: float = 1.96) -> tuple[float, float]:
+    if n == 0:
+        return np.nan, np.nan
+    p = k / n
+    den = 1 + z * z / n
+    c = (p + z * z / (2 * n)) / den
+    h = z * np.sqrt(p * (1 - p) / n + z * z / (4 * n * n)) / den
+    return c - h, c + h
+
+
+def time_split() -> pd.DataFrame:
+    """Held-out test: oncogenic calls first evaluated after AlphaMissense's release.
+
+    Test positives: ClinVar Oncogenic/Likely oncogenic, last evaluated on or after
+    19 Sep 2023, with assertion criteria, and NOT already in CIViC (so the tools
+    cannot have been tuned on them). Reported per gene class:
+      * detection rate at fixed thresholds (Wilson 95% CI);
+      * false-flag rate on common gnomAD variants in the same genes;
+      * AUROC against those gnomAD negatives (secondary; flatters AlphaMissense).
+    """
+    d = pd.read_parquet(PROCESSED / "civic_missense_alphamissense.parquet")
+    d = d[d["am_pathogenicity"].notna() & d["esm1b_llr"].notna()].copy()
+    when = pd.to_datetime(d["clinvar_last_evaluated"], errors="coerce", format="mixed")
+    test = d[(d["clinvar_oncogenic"] == 1) & (when >= AM_RELEASE)
+             & (d["source"] == "clinvar")
+             & d["clinvar_review_status"].str.startswith("criteria provided", na=False)]
+    neg = d[d["label_source"] == "gnomad_common"]
+    test.to_parquet(PROCESSED / "time_split_test.parquet", index=False)
+    print(f"Held-out oncogenic variants: {len(test)} "
+          f"({test['gene'].nunique()} genes); gnomAD negatives: {len(neg)}")
+
+    rows = []
+    for role in ["oncogene", "tumour_suppressor", "all"]:
+        pos_r = test if role == "all" else test[test["gene_role"] == role]
+        neg_r = neg if role == "all" else neg[neg["gene_role"] == role]
+        for name, col, op, thr in THRESHOLDS:
+            hit_p = pos_r[col] >= thr if op == ">=" else pos_r[col] <= thr
+            hit_n = neg_r[col] >= thr if op == ">=" else neg_r[col] <= thr
+            k, n = int(hit_p.sum()), len(pos_r)
+            lo, hi = _wilson(k, n)
+            fk, fn = int(hit_n.sum()), len(neg_r)
+            rows.append({"gene_role": role, "predictor": name, "threshold": f"{op}{thr}",
+                         "n_test": n, "detected": k, "detection_rate": k / n if n else np.nan,
+                         "det_ci_low": lo, "det_ci_high": hi,
+                         "n_gnomad": fn, "false_flag_rate": fk / fn if fn else np.nan})
+        if len(pos_r) >= 5 and len(neg_r) >= 5:
+            y = np.r_[np.ones(len(pos_r)), np.zeros(len(neg_r))].astype(int)
+            for name, (col, sign) in PREDICTORS.items():
+                s = sign * np.r_[pos_r[col].to_numpy(), neg_r[col].to_numpy()]
+                auc, lo, hi = _boot_auc(y, s)
+                rows.append({"gene_role": role, "predictor": name, "threshold": "AUROC vs gnomAD",
+                             "n_test": len(pos_r), "detection_rate": auc,
+                             "det_ci_low": lo, "det_ci_high": hi, "n_gnomad": len(neg_r)})
+    res = pd.DataFrame(rows)
+    res.to_csv(PROCESSED / "time_split_results.csv", index=False)
+    with pd.option_context("display.float_format", "{:.3f}".format, "display.width", 200):
+        print(res.to_string(index=False))
+    print("\ndetection_rate = share of held-out oncogenic variants the tool flags.")
+    print("false_flag_rate = share of common (presumed harmless) gnomAD variants it flags.")
+    return res
