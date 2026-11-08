@@ -108,16 +108,27 @@ def build() -> Path:
     v.loc[v["onc_supports_n"] > 0, "civic_oncogenic"] = 1
     v.loc[(v["onc_against_n"] > 0) & (v["onc_supports_n"] == 0), "civic_oncogenic"] = 0
     v["civic_actionable"] = (v["actionable_n"] > 0).astype(int)
+    v["source"] = "civic"
+    civic_genes = sorted(v["gene"].unique())
+
+    # ClinVar somatic oncogenicity, in CIViC genes and IntOGen driver genes.
+    from .enrich import clinvar_oncogenicity, intogen_roles
+    cv = clinvar_oncogenicity(set(civic_genes) | set(intogen_roles().index))
+    print(f"ClinVar oncogenicity missense: {len(cv)} "
+          f"({cv['clinvar_oncogenic'].sum()} oncogenic) across {cv['gene'].nunique()} genes")
+    v = v.merge(cv, on=["gene", "variant"], how="outer")
+    v["source"] = v["source"].fillna("clinvar")
+    for col in ("onc_supports_n", "onc_against_n", "actionable_n", "civic_actionable"):
+        v[col] = v[col].fillna(0).astype(int)
 
     mapping = gene_to_uniprot(sorted(v["gene"].unique()))
     v["uniprot_id"] = v["gene"].map(mapping).fillna("")
-    v["source"] = "civic"
 
-    # Population negatives: common gnomAD missense in the same genes.
+    # Population negatives: common gnomAD missense in the CIViC genes.
     from .enrich import MIN_AF, gene_roles, gnomad_for_genes
-    gn = gnomad_for_genes(sorted(v["gene"].unique()))
+    gn = gnomad_for_genes(civic_genes)
     common = gn[gn["gnomad_af"] >= MIN_AF].copy()
-    civic_keys = set(zip(v["gene"], v["variant"]))
+    civic_keys = set(zip(v["gene"], v["variant"]))  # CIViC + ClinVar
     common = common[[k not in civic_keys for k in zip(common["gene"], common["variant"])]]
     common["uniprot_id"] = common["gene"].map(mapping).fillna("")
     common["source"] = "gnomad_common"
@@ -132,6 +143,13 @@ def build() -> Path:
     v.loc[pos, ["label", "label_source"]] = [1, "civic_oncogenic"]
     neg = v["civic_oncogenic"] == 0
     v.loc[neg, ["label", "label_source"]] = [0, "civic_not_oncogenic"]
+    # ClinVar fills in where CIViC has no oncogenicity call; disagreements are flagged.
+    cvl = v["clinvar_oncogenic"]
+    fill = v["label"].isna() & cvl.notna()
+    v.loc[fill & (cvl == 1), ["label", "label_source"]] = [1, "clinvar_oncogenic"]
+    v.loc[fill & (cvl == 0), ["label", "label_source"]] = [0, "clinvar_benign"]
+    v["label_conflict"] = v["civic_oncogenic"].notna() & cvl.notna() & (
+        v["civic_oncogenic"].astype("Float64") != cvl.astype("Float64"))
     gneg = v["source"] == "gnomad_common"
     v.loc[gneg, ["label", "label_source"]] = [0, "gnomad_common"]
 
@@ -162,5 +180,6 @@ def build() -> Path:
     print(f"UniProt mapped genes: {sum(1 for x in mapping.values() if x)}/{len(mapping)}")
     print(f"Variants with an AlphaMissense score: {matched.sum()}/{len(out)}")
     print(out.groupby(["gene_role", "label_source"], dropna=False).size().to_string())
+    print(f"CIViC/ClinVar label conflicts: {int(out['label_conflict'].sum())}")
     print(f"Wrote {path.relative_to(ROOT)}")
     return path

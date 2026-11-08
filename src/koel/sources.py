@@ -141,6 +141,19 @@ SOURCES.append(
     )
 )
 
+SOURCES.append(
+    Source(
+        key="clinvar-summary",
+        group="clinvar",
+        url="https://ftp.ncbi.nlm.nih.gov/pub/clinvar/tab_delimited/variant_summary.txt.gz",
+        filename="clinvar/variant_summary.txt.gz",
+        licence="Public domain (NCBI/NLM data policy)",
+        redistributable=True,
+        approx_size="~460 MB",
+        notes="Includes the somatic Oncogenicity classification column (ClinGen/CGC/VICC-style).",
+    )
+)
+
 # Sources still to be chosen, with the licence question that must be settled first.
 PENDING = {
     "structures": "AlphaFold DB (CC BY 4.0) for residue coordinates and pLDDT.",

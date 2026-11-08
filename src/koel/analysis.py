@@ -38,11 +38,16 @@ def summarise() -> pd.DataFrame:
     d = pd.read_parquet(PROCESSED / "civic_missense_alphamissense.parquet")
     # Compare predictors on the same variants: keep rows scored by all of them.
     cols = [c for c, _ in PREDICTORS.values()]
-    d = d[d[cols].notna().all(axis=1) & d["label"].notna()].copy()
-    d["label"] = d["label"].astype(int)
+    d = d[d[cols].notna().all(axis=1)].copy()
     rows = []
+    act = d[d["label"].isna() & (d["civic_actionable"] == 1)].copy()
+    act["label"] = 1
+    d = d[d["label"].notna()].copy()
+    d["label"] = d["label"].astype(int)
+    expert = d[d["label_source"] != "gnomad_common"]
     for labelset, frame in {
-        "expert": d[d["label_source"] != "gnomad_common"],
+        "expert (CIViC+ClinVar)": expert,
+        "expert+actionable": pd.concat([expert, act]),
         "expert+population": d,
     }.items():
         for role in ROLES:

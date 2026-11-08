@@ -166,3 +166,38 @@ def load_esm1b(accessions: set[str]) -> pd.DataFrame:
             long["uniprot_id"] = acc
             rows.append(long[["uniprot_id", "variant", "esm1b_llr"]])
     return pd.concat(rows, ignore_index=True)
+
+
+CLINVAR = RAW / "clinvar" / "variant_summary.txt.gz"
+CLINVAR_PROTEIN = re.compile(r"\(p\.([A-Z][a-z]{2})(\d+)([A-Z][a-z]{2})\)")
+ONCO_POS = {"Oncogenic", "Likely oncogenic"}
+ONCO_NEG = {"Benign", "Likely benign"}
+
+
+def clinvar_oncogenicity(genes: set[str]) -> pd.DataFrame:
+    """ClinVar somatic Oncogenicity classifications for missense variants (public domain).
+
+    Oncogenic / Likely oncogenic -> 1; Benign / Likely benign -> 0; others dropped.
+    Uses GRCh38 rows only so each variant is counted once.
+    """
+    cols = ["Type", "Name", "GeneSymbol", "Assembly", "Oncogenicity",
+            "OncogenicityLastEvaluated", "ReviewStatusOncogenicity", "VariationID"]
+    df = pd.read_csv(CLINVAR, sep="\t", usecols=cols, dtype=str, low_memory=False)
+    df = df[(df["Assembly"] == "GRCh38") & (df["Type"] == "single nucleotide variant")
+            & df["GeneSymbol"].isin(genes)
+            & df["Oncogenicity"].isin(ONCO_POS | ONCO_NEG)]
+    p = df["Name"].str.extract(CLINVAR_PROTEIN)
+    df = df[p[0].isin(AA3) & p[2].isin(AA3)].copy()
+    p = p.loc[df.index]
+    df["variant"] = p[0].map(AA3) + p[1] + p[2].map(AA3)
+    df["clinvar_oncogenic"] = df["Oncogenicity"].isin(ONCO_POS).astype(int)
+    df = df.rename(columns={"GeneSymbol": "gene", "VariationID": "clinvar_variation_id",
+                            "OncogenicityLastEvaluated": "clinvar_last_evaluated",
+                            "ReviewStatusOncogenicity": "clinvar_review_status",
+                            "Oncogenicity": "clinvar_oncogenicity"})
+    keep = ["gene", "variant", "clinvar_oncogenic", "clinvar_oncogenicity",
+            "clinvar_last_evaluated", "clinvar_review_status", "clinvar_variation_id"]
+    df = df[keep]
+    # Drop variants with conflicting ClinVar calls across records.
+    n = df.groupby(["gene", "variant"])["clinvar_oncogenic"].transform("nunique")
+    return df[n == 1].drop_duplicates(["gene", "variant"])
