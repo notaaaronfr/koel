@@ -45,8 +45,3 @@ uv run koel download --list      # show data sources, sizes and licences
 uv run koel download civic       # small files
 uv run koel download alphamissense   # about 1.2 GB
 ```
-
-## Dedication
-
-Named for **Kokila**, whom her family also calls **Jenny**. *Kokila* means the koel,
-the songbird whose call announces a new season.
