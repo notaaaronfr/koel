@@ -50,6 +50,9 @@ def main(argv: list[str] | None = None) -> int:
     ts = sub.add_parser("timesplit", help="held-out test on oncogenic calls made after AlphaMissense's release")
     ts.set_defaults(func=lambda a: (__import__("koel.analysis", fromlist=["time_split"]).time_split(), 0)[1])
 
+    tt = sub.add_parser("trust", help="trust table: evidence strength per predictor and gene type")
+    tt.set_defaults(func=lambda a: (__import__("koel.calibrate", fromlist=["build"]).build(), 0)[1])
+
     args = p.parse_args(argv)
     return args.func(args)
 

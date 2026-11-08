@@ -44,4 +44,29 @@ uv sync
 uv run koel download --list      # show data sources, sizes and licences
 uv run koel download civic       # small files
 uv run koel download alphamissense   # about 1.2 GB
+uv run koel table                # build the labelled table
+uv run koel analyse              # AUROC per gene type
+uv run koel lab                  # compare with lab-measured function
+uv run koel timesplit            # held-out test on calls made after AlphaMissense
+uv run koel trust                # trust table (evidence strength per gene type)
 ```
+
+## First trust table (v0, research use only)
+
+`uv run koel trust` writes `data/processed/trust_table.csv`. For each predictor and
+gene type it gives the score needed for each ClinGen evidence strength, using local
+likelihood ratios with a bootstrap 95% bound (method in `src/koel/calibrate.py`).
+
+AlphaMissense, oncogenic side, expert labels plus common gnomAD negatives:
+
+| Strength (points) | Oncogenes (gas pedal) | Tumour suppressors (brakes) |
+|---|---|---|
+| Supporting (+1) | ≥ 0.885 (77% of oncogenic variants reach it) | ≥ 0.830 (83%) |
+| Moderate (+2) | ≥ 0.982 (54%) | ≥ 0.943 (73%) |
+
+In oncogenes, the same strength of evidence needs a higher score, and fewer real
+oncogenic variants reach it. These thresholds, re-learnt without variants classified
+after AlphaMissense's release, held on those held-out variants at the supporting and
+moderate levels. Caveats: the negatives are mostly common population variants (which
+make predictors look better), some curators may have seen AlphaMissense scores, and
+labels are a few hundred variants per gene type. Not for clinical use.
