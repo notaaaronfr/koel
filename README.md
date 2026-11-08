@@ -74,18 +74,24 @@ The full table (including ESM1b) is written to `data/processed/trust_table.csv`.
 Same direction as the trust table, but the confidence intervals overlap. That is why
 Koel reports evidence strengths with bounds, not single accuracy numbers.
 
-### 3. Against lab measurements
+### 3. Against lab measurements: the clearest result
 
-About 10,800 mutations measured in the lab (deep mutational scans via MaveDB, CC0):
+About 53,000 mutations measured in the lab (CC0, via MaveDB). For brake genes the question
+is "is the protein broken?". For gas-pedal genes it is "is the protein **switched on**?",
+measured as MAPK pathway activity in the [MAPK variant-effect atlas](https://doi.org/10.64898/2026.10.04.756099)
+(Simon et al. 2026, preprint), using the data authors' own activating / neutral / loss calls.
 
-| Gene | AlphaMissense AUROC | ESM1b AUROC |
-|---|---|---|
-| TP53 | 0.93 | 0.84 |
-| PTEN | 0.89 | 0.85 |
-| BRCA1 | 0.90 | 0.85 |
+| AlphaMissense AUROC (0.5 = coin flip) | Result |
+|---|---|
+| Brakes (TP53, PTEN, BRCA1): broken vs normal | **0.85** (per gene 0.89–0.93) |
+| Gas pedals (KRAS, BRAF, EGFR, ERBB2, MAP2K1): switched on vs everything else | **0.68** (KRAS 0.51, ERBB2 0.51, EGFR 0.54) |
+| Gas pedals: switched on vs switched off | **0.44**: switched-**off** variants score *higher* |
 
-All three are tumour suppressors. **No large open lab dataset for an oncogene is in Koel
-yet. That is the most useful thing a collaborator could bring.**
+Known hotspots (KRAS G12D, BRAF V600E, EGFR L858R, ERBB2 L755S, MAP2K1 Q56P) all score
+≥ 0.99, so the tools do notice *that* something changed. But in gas-pedal genes they cannot
+tell **on** from **off**, and a switched-off oncogene does not cause cancer. In the lab-data
+trust table, **no AlphaMissense or ESM1b score earns even supporting evidence for
+"switched on"**, while in brake genes AlphaMissense reaches moderate. ESM1b behaves the same.
 
 ### Known limitations
 
@@ -93,6 +99,8 @@ yet. That is the most useful thing a collaborator could bring.**
   saw similar data in training, so these numbers are **optimistic**.
 - Some ClinVar curators may have looked at AlphaMissense when classifying.
 - A few hundred expert-labelled mutations per gene type, so intervals are wide.
+- The gas-pedal lab data is one cell-based assay of pathway activity, from a recent
+  preprint. "Switched on in the assay" is not the same as "causes cancer in a patient".
 
 ## Quick start
 
@@ -140,7 +148,7 @@ flowchart LR
 |---|---|
 | [`sources.py`](src/koel/sources.py) | every data source, URL and licence |
 | [`table.py`](src/koel/table.py), [`enrich.py`](src/koel/enrich.py) | join labels, gene roles and scores |
-| [`mave.py`](src/koel/mave.py) | lab-measured labels from MaveDB |
+| [`mave.py`](src/koel/mave.py) | lab-measured labels from MaveDB (broken / switched on) |
 | [`analysis.py`](src/koel/analysis.py) | AUROC, lab comparison, time split |
 | [`calibrate.py`](src/koel/calibrate.py) | trust table (likelihood ratios to evidence points) |
 
@@ -167,7 +175,7 @@ Data files are downloaded, never committed. Koel's **code** is MIT licensed. Any
 - [x] Accuracy per gene type, lab comparison, held-out time split
 - [x] Trust table v0 (AlphaMissense, ESM1b)
 - [ ] More predictors, where their licences allow
-- [ ] Lab data for oncogenes (activating deep mutational scans)
+- [x] Lab data for oncogenes (MAPK atlas: KRAS, BRAF, EGFR, ERBB2, MAP2K1)
 - [ ] Expert-confirmed benign labels to replace population negatives
 - [ ] Website: gene pages, mutation lookup, predictor leaderboard, downloads
 - [ ] Trust tables as files that PCGR, VEP and cBioPortal can load
@@ -179,8 +187,8 @@ Koel is built in the open. Especially welcome:
 
 - **Variant curators and molecular pathologists:** does the trust table match how
   you weigh OP1 in practice? What would make it usable?
-- **Cancer biologists:** open lab datasets for **oncogenes**, or expert-confirmed
-  benign somatic variants.
+- **Cancer biologists:** more open lab datasets for **oncogenes** (especially PIK3CA,
+  NRAS, IDH1, CTNNB1), or expert-confirmed benign somatic variants.
 - **ML and statistics people:** better calibration, more predictors, stronger tests.
 
 Open an [issue](https://github.com/notaaaronfr/koel/issues), or see

@@ -72,7 +72,14 @@ def summarise() -> pd.DataFrame:
 
 
 def lab_tested() -> pd.DataFrame:
-    """Compare predictors against lab-measured function (MaveDB, CC0)."""
+    """Compare predictors with lab-measured function (MaveDB, CC0).
+
+    Brakes (TP53, PTEN, BRCA1): damaging vs normal.
+    Gas pedals (KRAS, BRAF, EGFR, ERBB2, MAP2K1): three questions:
+      * activating vs everything else (the oncogenicity question);
+      * activating vs neutral (does the tool notice switched-on variants at all?);
+      * activating vs loss (can it tell switched ON from switched OFF?).
+    """
     from scipy.stats import spearmanr
 
     from .enrich import load_esm1b
@@ -88,26 +95,46 @@ def lab_tested() -> pd.DataFrame:
              .merge(load_esm1b(acc), on=["uniprot_id", "variant"], how="inner"))
     d.to_parquet(PROCESSED / "lab_tested.parquet", index=False)
 
-    for gene, var in [("TP53", "R175H"), ("PTEN", "C124S"), ("BRCA1", "C61G")]:
+    for gene, var in [("TP53", "R175H"), ("PTEN", "C124S"), ("BRCA1", "C61G"),
+                      ("KRAS", "G12D"), ("BRAF", "V600E"), ("EGFR", "L858R"),
+                      ("ERBB2", "L755S"), ("MAP2K1", "Q56P")]:
         r = d[(d.gene == gene) & (d.variant == var)]
-        print(f"check {gene} {var}: lab label = {r['mave_label'].tolist()}")
+        print(f"check {gene} {var}: lab effect = {r['mave_effect'].tolist()}")
 
+    comparisons = {
+        "tumour_suppressor": [("damaging vs normal", ["damaging"], ["normal"])],
+        "oncogene": [("activating vs rest", ["activating"], ["neutral", "loss"]),
+                     ("activating vs neutral", ["activating"], ["neutral"]),
+                     ("activating vs loss", ["activating"], ["loss"])],
+    }
     rows = []
-    for gene, g in d.groupby("gene"):
-        lab = g[g["mave_label"].notna()]
-        y = lab["mave_label"].astype(int).to_numpy()
-        for name, (col, sign) in PREDICTORS.items():
-            auc, lo, hi = _boot_auc(y, sign * lab[col].to_numpy())
-            rho = spearmanr(sign * g[col], g["mave_score_signed"]).statistic
-            rows.append({"gene": gene, "predictor": name, "n_damaging": int(y.sum()),
-                         "n_normal": int((y == 0).sum()), "auroc": auc,
-                         "ci_low": lo, "ci_high": hi, "spearman_vs_lab": rho})
+    groups = [(g, sub) for g, sub in d.groupby("gene")] + \
+             [(f"ALL {role}", sub) for role, sub in d.groupby("gene_role")]
+    for gene, g in groups:
+        role = g["gene_role"].iloc[0]
+        for comp, pos_e, neg_e in comparisons[role]:
+            sub = g[g["mave_effect"].isin(pos_e + neg_e)]
+            y = sub["mave_effect"].isin(pos_e).astype(int).to_numpy()
+            if y.sum() < 5 or (y == 0).sum() < 5:
+                continue
+            for name, (col, sign) in PREDICTORS.items():
+                auc, lo, hi = _boot_auc(y, sign * sub[col].to_numpy(), n=500)
+                rho = (spearmanr(sign * g[col], g["mave_score_signed"]).statistic
+                       if role == "tumour_suppressor" else np.nan)
+                rows.append({"gene": gene, "gene_role": role, "comparison": comp,
+                             "predictor": name, "n_pos": int(y.sum()),
+                             "n_neg": int((y == 0).sum()), "auroc": auc,
+                             "ci_low": lo, "ci_high": hi, "spearman_vs_lab": rho})
     res = pd.DataFrame(rows)
     res.to_csv(PROCESSED / "lab_tested_auroc.csv", index=False)
     stats.to_csv(PROCESSED / "lab_tested_assays.csv", index=False)
-    with pd.option_context("display.float_format", "{:.3f}".format):
+    with pd.option_context("display.float_format", "{:.3f}".format, "display.width", 200):
+        print(stats[["gene", "assay", "n_missense", "n_damaging", "n_normal"]
+                    + (["n_loss"] if "n_loss" in stats else [])].to_string(index=False))
         print(res.to_string(index=False))
-    print("\nAll three genes are tumour suppressors (brakes); labels are functional, not oncogenicity.")
+    print("\nLabels are functional, not oncogenicity calls. AUROC 0.5 = no better than chance.")
+    print("'activating vs loss' below 0.5 means the tool scores switched-OFF variants as MORE"
+          " harmful than switched-ON ones.")
     return res
 
 

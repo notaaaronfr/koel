@@ -162,14 +162,19 @@ def build() -> pd.DataFrame:
     roles = ["oncogene", "tumour_suppressor", "all"]
     rows = _table(d, "expert+population", roles)
 
-    # Lab-measured function (brake genes only): a functional, not oncogenic, view.
+    # Lab-measured function: brakes (damaging vs normal) and gas pedals (activating vs
+    # neutral-or-loss, since a switched-off oncogene is not oncogenic).
     lab_path = PROCESSED / "lab_tested.parquet"
     if lab_path.exists():
         lab = pd.read_parquet(lab_path)
         lab = lab[lab["mave_label"].notna()].copy()
         lab["label"] = lab["mave_label"].astype(int)
-        lab["gene_role"] = "tumour_suppressor"
-        rows += _table(lab, "lab function (TP53, PTEN, BRCA1)", ["tumour_suppressor"])
+        if "gene_role" not in lab:
+            lab["gene_role"] = "tumour_suppressor"
+        rows += _table(lab[lab["gene_role"] == "tumour_suppressor"],
+                       "lab function (TP53, PTEN, BRCA1)", ["tumour_suppressor"])
+        rows += _table(lab[lab["gene_role"] == "oncogene"],
+                       "lab activity (KRAS, BRAF, EGFR, ERBB2, MAP2K1)", ["oncogene"])
     res = pd.DataFrame(rows)
     res.to_csv(PROCESSED / "trust_table.csv", index=False)
 

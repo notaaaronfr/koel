@@ -11,6 +11,15 @@ Datasets come from MaveDB and are CC0. For each assay Koel:
        * 0 (functionally normal) if it lies inside the synonymous 5-95% range;
        * NA otherwise (intermediate).
 These are *functional* labels, not oncogenicity calls, and are reported separately.
+
+Oncogenes (gas pedals) are handled differently: the question is not "is the protein
+broken?" but "is it switched ON?". Koel uses the MAPK-pathway atlas (LABEL-seq; Simon et
+al., bioRxiv 10.64898/2026.10.04.756099, CC0 via MaveDB), where each variant's ERK
+activity is reported relative to wild type (1 = wild type, >1 = more active). The data
+authors classify every variant as ``high`` / ``wt-like`` / ``low``; Koel uses their calls:
+  * ``mave_effect`` = activating / neutral / loss;
+  * ``mave_label`` = 1 if activating, else 0 (a loss-of-function variant in an
+    oncogene is not oncogenic, so it counts as a negative).
 """
 
 from __future__ import annotations
@@ -36,6 +45,18 @@ ASSAYS = [
     {"gene": "BRCA1", "urn": "urn:mavedb:00000097-0-2", "protein_col": None,
      "transcript": "NM_007294.3", "label": "BRCA1 saturation genome editing (Findlay 2018)"},
 ]
+
+# Oncogene activity assays (MAPK atlas). Conditions chosen where known activating
+# hotspots stand out (e.g. EGFR under serum starvation, where L858R is ~3x wild type).
+ONCO_ASSAYS = [
+    {"gene": "KRAS", "urn": "urn:mavedb:00001302-f-1", "label": "KRAS ERK activity, DMSO"},
+    {"gene": "BRAF", "urn": "urn:mavedb:00001315-d-1", "label": "BRAF C-terminal construct activity"},
+    {"gene": "BRAF", "urn": "urn:mavedb:00001315-h-1", "label": "BRAF N-terminal construct activity"},
+    {"gene": "EGFR", "urn": "urn:mavedb:00001308-d-1", "label": "EGFR activity, serum starvation"},
+    {"gene": "ERBB2", "urn": "urn:mavedb:00001309-b-1", "label": "ERBB2 activity, baseline"},
+    {"gene": "MAP2K1", "urn": "urn:mavedb:00001306-c-1", "label": "MAP2K1 activity, baseline"},
+]
+EFFECT = {"high": "activating", "wt-like": "neutral", "low": "loss"}
 
 PRO = re.compile(r"p\.\(?([A-Z][a-z]{2})(\d+)([A-Z][a-z]{2}|=|Ter|\*)\)?$")
 CODON = {}
@@ -173,10 +194,42 @@ def assay_labels(assay: dict) -> tuple[pd.DataFrame, dict]:
     return mis, stats
 
 
+def onco_assay_labels(assay: dict) -> tuple[pd.DataFrame, dict]:
+    """Activating / neutral / loss labels from the data authors' own classification."""
+    df = _scores(assay["urn"])
+    df = pd.concat([df[["score", "variant_classification"]], _classify(df["hgvs_pro"])], axis=1)
+    mis = df[(df["kind"] == "missense") & df["score"].gt(0)].copy()
+    mis["mave_effect"] = mis["variant_classification"].map(EFFECT)
+    mis = mis.dropna(subset=["mave_effect"])
+    # One call per amino-acid change; drop changes measured with conflicting calls.
+    agree = mis.groupby("variant")["mave_effect"].transform("nunique") == 1
+    mis = (mis[agree].groupby("variant", as_index=False)
+              .agg(score=("score", "mean"), mave_effect=("mave_effect", "first")))
+    mis["mave_score_signed"] = np.log2(mis["score"])     # larger = more active
+    mis["mave_label"] = (mis["mave_effect"] == "activating").astype(int)
+    mis["gene"], mis["mave_assay"] = assay["gene"], assay["urn"]
+    syn = df[df["kind"] == "synonymous"]["score"]
+    stats = {"gene": assay["gene"], "urn": assay["urn"], "assay": assay["label"],
+             "n_synonymous": len(syn), "n_nonsense": int((df["kind"] == "nonsense").sum()),
+             "n_missense": len(mis), "n_damaging": int((mis["mave_effect"] == "activating").sum()),
+             "n_normal": int((mis["mave_effect"] == "neutral").sum()),
+             "n_loss": int((mis["mave_effect"] == "loss").sum()),
+             "broken_direction": "higher = more active", "method": "data authors' classification"}
+    return mis.drop(columns=["score"]), stats
+
+
 def all_assays() -> tuple[pd.DataFrame, pd.DataFrame]:
     frames, stats = [], []
     for a in ASSAYS:
         m, s = assay_labels(a)
+        m["gene_role"], s["gene_role"] = "tumour_suppressor", "tumour_suppressor"
+        m["mave_effect"] = m["mave_label"].map({1: "damaging", 0: "normal"})
         frames.append(m)
         stats.append(s)
-    return pd.concat(frames, ignore_index=True), pd.DataFrame(stats)
+    for a in ONCO_ASSAYS:
+        m, s = onco_assay_labels(a)
+        m["gene_role"], s["gene_role"] = "oncogene", "oncogene"
+        frames.append(m)
+        stats.append(s)
+    out = pd.concat(frames, ignore_index=True).drop_duplicates(["gene", "variant"])
+    return out, pd.DataFrame(stats)
