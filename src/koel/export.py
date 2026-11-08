@@ -15,7 +15,7 @@ import pandas as pd
 from .table import PROCESSED
 
 
-def _num(x, nd=3):
+def _num(x, nd=4):
     return None if pd.isna(x) else round(float(x), nd)
 
 
