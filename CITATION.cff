@@ -1,0 +1,22 @@
+cff-version: 1.2.0
+message: "If you use Koel, please cite it as below."
+title: "Koel: an open trust checker for cancer mutation scores"
+type: software
+authors:
+  - alias: notaaaronfr
+version: 0.1.0
+date-released: 2026-11-08
+license: MIT
+repository-code: "https://github.com/notaaaronfr/koel"
+abstract: >-
+  Koel measures how much evidence missense pathogenicity predictors
+  (AlphaMissense, ESM1b) provide for somatic oncogenicity, separately for
+  oncogenes and tumour suppressors, and maps scores to ClinGen/CGC/VICC
+  evidence strengths using openly licensed data only. Research use only.
+keywords:
+  - cancer genomics
+  - variant interpretation
+  - oncogenicity
+  - AlphaMissense
+  - calibration
+  - variants of uncertain significance

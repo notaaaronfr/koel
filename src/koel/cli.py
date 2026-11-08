@@ -28,6 +28,18 @@ def _cmd_download(args: argparse.Namespace) -> int:
     return 0
 
 
+def _cmd_all(args: argparse.Namespace) -> int:
+    from . import analysis, calibrate, table
+    for title, step in [("Building the labelled table", table.build),
+                        ("Accuracy per gene type", analysis.summarise),
+                        ("Lab-measured function", analysis.lab_tested),
+                        ("Held-out time split", analysis.time_split),
+                        ("Trust table", calibrate.build)]:
+        print(f"\n=== {title} ===")
+        step()
+    return 0
+
+
 def main(argv: list[str] | None = None) -> int:
     p = argparse.ArgumentParser(prog="koel", description=__doc__)
     sub = p.add_subparsers(dest="command", required=True)
@@ -52,6 +64,12 @@ def main(argv: list[str] | None = None) -> int:
 
     tt = sub.add_parser("trust", help="trust table: evidence strength per predictor and gene type")
     tt.set_defaults(func=lambda a: (__import__("koel.calibrate", fromlist=["build"]).build(), 0)[1])
+
+    fg = sub.add_parser("figures", help="redraw the README chart (needs: uv sync --group figures)")
+    fg.set_defaults(func=lambda a: (__import__("koel.figures", fromlist=["build"]).build(), 0)[1])
+
+    al = sub.add_parser("all", help="build the table and run every analysis in order")
+    al.set_defaults(func=_cmd_all)
 
     args = p.parse_args(argv)
     return args.func(args)
