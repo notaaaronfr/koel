@@ -34,9 +34,22 @@ def _curves():
         k = 9
         sm = np.convolve(np.log(lr), np.ones(k) / k, mode="same")
         sm[: k // 2], sm[-(k // 2):] = np.log(lr[: k // 2]), np.log(lr[-(k // 2):])
-        reach = {s: float((pos >= t).mean()) for s, t in _thresholds(role).items()}
+        reach = _reach(role)
         out[role] = (grid, np.exp(sm), reach)
     return out
+
+
+def _reach(role: str) -> dict[str, float]:
+    """Share of oncogenic variants reaching each strength, exactly as in the trust table."""
+    import pandas as pd
+
+    from .table import PROCESSED
+    t = pd.read_csv(PROCESSED / "trust_table.csv")
+    t = t[(t["labels"] == "expert+population") & (t["gene_role"] == role)
+          & (t["predictor"] == "AlphaMissense") & (t["direction"] == "oncogenic")
+          & (t["threshold"] != "not reached")]
+    return {r.strength: float(r.share_oncogenic_reached) for r in t.itertuples()
+            if r.strength in ("supporting", "moderate")}
 
 
 def _thresholds(role: str) -> dict[str, float]:

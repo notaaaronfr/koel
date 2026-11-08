@@ -24,7 +24,7 @@ It depends on the gene. Koel measures how much.*
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="docs/figures/trust_curve_dark.png">
-  <img alt="Two charts. Left: the evidence an AlphaMissense score gives that a mutation is cancer-causing, plotted against the score, for oncogenes and tumour suppressors. Above about 0.9 the tumour suppressor curve rises faster. Right: share of known cancer-causing mutations that earn evidence points. Supporting: 77% in oncogenes vs 83% in tumour suppressors. Moderate: 54% vs 72%." src="docs/figures/trust_curve_light.png">
+  <img alt="Two charts. Left: the evidence an AlphaMissense score gives that a mutation is cancer-causing, plotted against the score, for oncogenes and tumour suppressors. Above about 0.9 the tumour suppressor curve rises faster. Right: share of known cancer-causing mutations that earn evidence points. Supporting: 77% in oncogenes vs 83% in tumour suppressors. Moderate: 54% vs 73%." src="docs/figures/trust_curve_light.png">
 </picture>
 
 ## The problem in 30 seconds
@@ -54,7 +54,7 @@ bound on local likelihood ratios; [method](src/koel/calibrate.py)):
 | Evidence level | Oncogenes (gas pedal) | Tumour suppressors (brakes) |
 |---|---|---|
 | Supporting (+1 point) | score ≥ **0.885**, reached by 77% of cancer mutations | score ≥ **0.830**, reached by 83% |
-| Moderate (+2 points) | score ≥ **0.982**, reached by 54% | score ≥ **0.943**, reached by 72% |
+| Moderate (+2 points) | score ≥ **0.982**, reached by 54% | score ≥ **0.943**, reached by 73% |
 | Benign supporting (−1 point) | score ≤ 0.269 | score ≤ 0.284 |
 
 **In oncogenes the same evidence needs a higher score, and fewer real cancer mutations
@@ -85,7 +85,7 @@ measured as MAPK pathway activity in the [MAPK variant-effect atlas](https://doi
 |---|---|
 | Brakes (TP53, PTEN, BRCA1): broken vs normal | **0.85** (per gene 0.89–0.93) |
 | Gas pedals (KRAS, BRAF, EGFR, ERBB2, MAP2K1): switched on vs everything else | **0.68** (KRAS 0.51, ERBB2 0.51, EGFR 0.54) |
-| Gas pedals: switched on vs switched off | **0.44**: switched-**off** variants score *higher* |
+| Gas pedals: switched on vs switched off | **0.43**: switched-**off** variants score *higher* |
 
 Known hotspots (KRAS G12D, BRAF V600E, EGFR L858R, ERBB2 L755S, MAP2K1 Q56P) all score
 ≥ 0.99, so the tools do notice *that* something changed. But in gas-pedal genes they cannot

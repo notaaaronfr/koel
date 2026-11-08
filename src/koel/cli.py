@@ -68,6 +68,10 @@ def main(argv: list[str] | None = None) -> int:
     fg = sub.add_parser("figures", help="redraw the README chart (needs: uv sync --group figures)")
     fg.set_defaults(func=lambda a: (__import__("koel.figures", fromlist=["build"]).build(), 0)[1])
 
+    ex = sub.add_parser("export", help="write headline results as JSON for the website")
+    ex.add_argument("path", help="output .json path")
+    ex.set_defaults(func=lambda a: (__import__("koel.export", fromlist=["build"]).build(a.path), 0)[1])
+
     al = sub.add_parser("all", help="build the table and run every analysis in order")
     al.set_defaults(func=_cmd_all)
 
