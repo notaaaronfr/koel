@@ -122,3 +122,47 @@ def gnomad_for_genes(genes: list[str]) -> pd.DataFrame:
         if i % 10 == 0:
             print(f"  gnomAD: {i}/{len(genes)} genes")
     return pd.concat(out, ignore_index=True)
+
+
+INTOGEN = RAW / "intogen" / "2024-06-18_IntOGen-Drivers" / "Compendium_Cancer_Genes.tsv"
+INTOGEN_ROLE = {"Act": "oncogene", "LoF": "tumour_suppressor", "ambiguous": "both"}
+
+
+def intogen_roles() -> pd.Series:
+    """Gene symbol -> role from IntOGen's driver compendium (CC0).
+
+    A gene appears once per cohort; take its most frequent role across cohorts.
+    """
+    c = pd.read_csv(INTOGEN, sep="\t", usecols=["SYMBOL", "ROLE"])
+    r = c.groupby("SYMBOL")["ROLE"].agg(lambda s: s.value_counts().index[0])
+    return r.map(INTOGEN_ROLE)
+
+
+ESM1B_ZIP = RAW / "esm1b" / "ALL_hum_isoforms_ESM1b_LLR.zip"
+
+
+def load_esm1b(accessions: set[str]) -> pd.DataFrame:
+    """Precomputed ESM1b log-likelihood ratios for canonical isoforms (CC BY-NC 4.0).
+
+    Each CSV is a matrix: rows = alternative amino acid, columns = "REF POS".
+    Lower LLR means more damaging.
+    """
+    import zipfile
+
+    rows = []
+    with zipfile.ZipFile(ESM1B_ZIP) as z:
+        names = {n.rsplit("/", 1)[-1].removesuffix("_LLR.csv"): n
+                 for n in z.namelist() if n.endswith("_LLR.csv")}
+        for acc in sorted(accessions):
+            if acc not in names:
+                continue
+            with z.open(names[acc]) as f:
+                m = pd.read_csv(f, index_col=0)
+            long = m.stack().reset_index()
+            long.columns = ["alt", "refpos", "esm1b_llr"]
+            ref_pos = long["refpos"].str.split(" ", expand=True)
+            long["variant"] = ref_pos[0] + ref_pos[1] + long["alt"]
+            long = long[ref_pos[0] != long["alt"]]
+            long["uniprot_id"] = acc
+            rows.append(long[["uniprot_id", "variant", "esm1b_llr"]])
+    return pd.concat(rows, ignore_index=True)

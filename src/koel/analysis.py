@@ -18,6 +18,8 @@ from sklearn.metrics import roc_auc_score
 from .table import PROCESSED
 
 ROLES = ["oncogene", "tumour_suppressor", "both", "unknown", "all"]
+# Predictor name -> (column, sign). Higher signed score = more likely damaging.
+PREDICTORS = {"AlphaMissense": ("am_pathogenicity", 1.0), "ESM1b": ("esm1b_llr", -1.0)}
 
 
 def _boot_auc(y: np.ndarray, s: np.ndarray, n: int = 2000, seed: int = 7) -> tuple[float, float, float]:
@@ -34,7 +36,9 @@ def _boot_auc(y: np.ndarray, s: np.ndarray, n: int = 2000, seed: int = 7) -> tup
 
 def summarise() -> pd.DataFrame:
     d = pd.read_parquet(PROCESSED / "civic_missense_alphamissense.parquet")
-    d = d[d["am_pathogenicity"].notna() & d["label"].notna()].copy()
+    # Compare predictors on the same variants: keep rows scored by all of them.
+    cols = [c for c, _ in PREDICTORS.values()]
+    d = d[d[cols].notna().all(axis=1) & d["label"].notna()].copy()
     d["label"] = d["label"].astype(int)
     rows = []
     for labelset, frame in {
@@ -44,12 +48,14 @@ def summarise() -> pd.DataFrame:
         for role in ROLES:
             sub = frame if role == "all" else frame[frame["gene_role"] == role]
             n_pos, n_neg = int((sub["label"] == 1).sum()), int((sub["label"] == 0).sum())
-            row = {"labels": labelset, "gene_role": role, "n_pos": n_pos, "n_neg": n_neg,
-                   "auroc": np.nan, "ci_low": np.nan, "ci_high": np.nan}
-            if n_pos >= 5 and n_neg >= 5:
-                row["auroc"], row["ci_low"], row["ci_high"] = _boot_auc(
-                    sub["label"].to_numpy(), sub["am_pathogenicity"].to_numpy())
-            rows.append(row)
+            for name, (col, sign) in PREDICTORS.items():
+                row = {"labels": labelset, "gene_role": role, "predictor": name,
+                       "n_pos": n_pos, "n_neg": n_neg,
+                       "auroc": np.nan, "ci_low": np.nan, "ci_high": np.nan}
+                if n_pos >= 5 and n_neg >= 5:
+                    row["auroc"], row["ci_low"], row["ci_high"] = _boot_auc(
+                        sub["label"].to_numpy(), sign * sub[col].to_numpy())
+                rows.append(row)
     res = pd.DataFrame(rows)
     out = PROCESSED / "first_look_auroc.csv"
     res.to_csv(out, index=False)

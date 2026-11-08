@@ -111,12 +111,38 @@ SOURCES.append(
     )
 )
 
+SOURCES.append(
+    Source(
+        key="esm1b-llr",
+        group="esm1b",
+        url="https://huggingface.co/spaces/ntranoslab/esm_variants/resolve/main/ALL_hum_isoforms_ESM1b_LLR.zip",
+        filename="esm1b/ALL_hum_isoforms_ESM1b_LLR.zip",
+        licence="CC BY-NC 4.0",
+        redistributable=False,
+        approx_size="~1.3 GB",
+        notes=(
+            "Precomputed ESM1b log-likelihood ratios for all human protein isoforms "
+            "(Brandes et al., Nature Genetics 2023). Non-commercial; licence from the "
+            "Hugging Face space card, checked 8 Nov 2026. Lower LLR = more damaging."
+        ),
+    )
+)
+
+SOURCES.append(
+    Source(
+        key="intogen-drivers",
+        group="intogen",
+        url="https://www.intogen.org/download?file=IntOGen-Drivers-20240920.zip",
+        filename="intogen/IntOGen-Drivers-20240920.zip",
+        licence="CC0 1.0",
+        redistributable=True,
+        approx_size="~1 MB",
+        notes="Compendium of cancer driver genes with mode of action (Act = oncogene, LoF = tumour suppressor).",
+    )
+)
+
 # Sources still to be chosen, with the licence question that must be settled first.
 PENDING = {
-    "gene-role-refinement": (
-        "UniProt keywords are used now (CC BY 4.0). Compare later with IntOGen "
-        "mode-of-action labels once their licence is confirmed."
-    ),
     "structures": "AlphaFold DB (CC BY 4.0) for residue coordinates and pLDDT.",
 }
 

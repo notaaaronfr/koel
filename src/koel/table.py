@@ -137,12 +137,22 @@ def build() -> Path:
 
     roles = gene_roles(sorted(set(filter(None, mapping.values()))))
     v = v.merge(roles, on="uniprot_id", how="left")
-    v["gene_role"] = v["gene_role"].fillna("unknown")
+    v["gene_role_uniprot"] = v["gene_role"].fillna("unknown")
+    # Primary role: IntOGen (CC0); fall back to UniProt keywords.
+    from .enrich import intogen_roles
+    v["gene_role_intogen"] = v["gene"].map(intogen_roles())
+    v["gene_role"] = v["gene_role_intogen"].fillna(v["gene_role_uniprot"])
+    v["gene_role_source"] = v["gene_role_intogen"].notna().map({True: "intogen", False: "uniprot"})
 
     am = load_alphamissense(set(filter(None, mapping.values())))
     out = v.merge(am, left_on=["uniprot_id", "variant"],
                   right_on=["uniprot_id", "protein_variant"], how="left")
     out = out.drop(columns=["protein_variant"])
+
+    from .enrich import load_esm1b
+    esm = load_esm1b(set(filter(None, mapping.values())))
+    out = out.merge(esm, on=["uniprot_id", "variant"], how="left")
+    print(f"Variants with an ESM1b score: {out['esm1b_llr'].notna().sum()}/{len(out)}")
 
     path = PROCESSED / "civic_missense_alphamissense.parquet"
     out.to_parquet(path, index=False)
