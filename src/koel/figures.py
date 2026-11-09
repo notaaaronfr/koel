@@ -102,7 +102,7 @@ def build() -> None:
         ax.set_ylim(0.03, 100)
         ax.set_xlabel("AlphaMissense score")
         ax.set_ylabel("Evidence for 'oncogenic' (local likelihood ratio)")
-        ax.set_title("Same score, different trust", loc="left", fontsize=13,
+        ax.set_title("Expert labels: point estimates only", loc="left", fontsize=13,
                      fontweight="bold", color=th["ink"])
         ax.grid(False)
 

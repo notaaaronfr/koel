@@ -207,3 +207,66 @@ def time_split() -> pd.DataFrame:
     print("\ndetection_rate = share of held-out oncogenic variants the tool flags.")
     print("false_flag_rate = share of common (presumed harmless) gnomAD variants it flags.")
     return res
+
+
+def _gene_boot(frames: dict, stat, n: int = 2000, seed: int = 3) -> tuple[float, float]:
+    """95% CI resampling whole genes (clusters), not variants."""
+    rng = np.random.default_rng(seed)
+    keys = list(frames)
+    out = []
+    for _ in range(n):
+        d = pd.concat([frames[keys[i]] for i in rng.integers(0, len(keys), len(keys))])
+        v = stat(d)
+        if v is not None and not np.isnan(v):
+            out.append(v)
+    lo, hi = np.percentile(out, [2.5, 97.5])
+    return float(lo), float(hi)
+
+
+def robustness() -> pd.DataFrame:
+    """Gene-level (cluster) bootstrap for the headline claims.
+
+    Variant-level intervals treat mutations in the same gene as independent and look
+    sharper than the data supports (point raised by S.-G. Lee). Here whole genes are
+    resampled. Run after ``timesplit`` and ``lab``.
+    """
+    rows = []
+    t = pd.read_parquet(PROCESSED / "time_split_test.parquet")
+    t = t[t["gene_role"].isin(["oncogene", "tumour_suppressor"])].copy()
+    t["hit"] = t["am_pathogenicity"] >= 0.792
+    rate = {r: t.loc[t["gene_role"] == r, "hit"].mean() for r in ["oncogene", "tumour_suppressor"]}
+    by = {r: t[t["gene_role"] == r].groupby("gene")["hit"].agg(["sum", "count"])
+          for r in ["oncogene", "tumour_suppressor"]}
+    rng = np.random.default_rng(3)
+    diffs = []
+    for _ in range(5000):
+        s = {r: g.iloc[rng.integers(0, len(g), len(g))].sum() for r, g in by.items()}
+        diffs.append(s["oncogene"]["sum"] / s["oncogene"]["count"]
+                     - s["tumour_suppressor"]["sum"] / s["tumour_suppressor"]["count"])
+    lo, hi = np.percentile(diffs, [2.5, 97.5])
+    rows.append({"claim": "time split: detection difference at AM>=0.792 (oncogene - TSG)",
+                 "estimate": rate["oncogene"] - rate["tumour_suppressor"], "gene_ci_low": lo,
+                 "gene_ci_high": hi, "n_genes": f"{len(by['oncogene'])} vs {len(by['tumour_suppressor'])}"})
+
+    lab = pd.read_parquet(PROCESSED / "lab_tested.parquet")
+    for claim, role, pos, neg in [
+        ("lab: AUROC activating vs loss (oncogenes)", "oncogene", ["activating"], ["loss"]),
+        ("lab: AUROC activating vs rest (oncogenes)", "oncogene", ["activating"], ["neutral", "loss"]),
+        ("lab: AUROC damaging vs normal (TSGs)", "tumour_suppressor", ["damaging"], ["normal"]),
+    ]:
+        d0 = lab[(lab["gene_role"] == role) & lab["mave_effect"].isin(pos + neg)]
+        frames = dict(tuple(d0.groupby("gene")))
+
+        def stat(d, pos=pos):
+            y = d["mave_effect"].isin(pos).astype(int)
+            return roc_auc_score(y, d["am_pathogenicity"]) if y.nunique() == 2 else None
+
+        lo, hi = _gene_boot(frames, stat, n=1000)
+        rows.append({"claim": claim, "estimate": stat(d0), "gene_ci_low": lo,
+                     "gene_ci_high": hi, "n_genes": str(len(frames))})
+    res = pd.DataFrame(rows)
+    res.to_csv(PROCESSED / "robustness_gene_level.csv", index=False)
+    with pd.option_context("display.float_format", "{:.3f}".format, "display.width", 200):
+        print(res.to_string(index=False))
+    print("\nWhole genes resampled. With 3-5 genes per lab group, treat these as indicative.")
+    return res

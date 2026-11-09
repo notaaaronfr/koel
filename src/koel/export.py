@@ -56,6 +56,13 @@ def build(path: str | Path) -> Path:
         "falseFlagRate": _num(r.false_flag_rate),
     } for r in ts.itertuples()]
 
+    rob_path = PROCESSED / "robustness_gene_level.csv"
+    robustness = []
+    if rob_path.exists():
+        robustness = [{"claim": r.claim, "estimate": _num(r.estimate), "ciLow": _num(r.gene_ci_low),
+                       "ciHigh": _num(r.gene_ci_high), "nGenes": str(r.n_genes)}
+                      for r in pd.read_csv(rob_path).itertuples()]
+
     out = {
         "generated": date.today().isoformat(),
         "repo": "https://github.com/notaaaronfr/koel",
@@ -64,6 +71,7 @@ def build(path: str | Path) -> Path:
         "trust": trust_rows, "trustNotReached": not_reached,
         "trustValidation": val.where(val.notna(), None).to_dict("records"),
         "lab": lab_rows, "labAssays": assays, "timeSplit": ts_rows,
+        "robustness": robustness,
     }
     path = Path(path)
     path.parent.mkdir(parents=True, exist_ok=True)

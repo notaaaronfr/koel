@@ -26,7 +26,7 @@ It depends on the gene. Koel measures how much.*
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="docs/figures/trust_curve_dark.png">
-  <img alt="Two charts. Left: the evidence an AlphaMissense score gives that a mutation is cancer-causing, plotted against the score, for oncogenes and tumour suppressors. Above about 0.9 the tumour suppressor curve rises faster. Right: share of known cancer-causing mutations that earn evidence points. Supporting: 77% in oncogenes vs 83% in tumour suppressors. Moderate: 54% vs 73%." src="docs/figures/trust_curve_light.png">
+  <img alt="Two charts based on expert labels (point estimates, not significant at gene level). Left: the evidence an AlphaMissense score gives that a mutation is cancer-causing, plotted against the score, for oncogenes and tumour suppressors. Above about 0.9 the tumour suppressor curve rises faster. Right: share of known cancer-causing mutations that earn evidence points. Supporting: 77% in oncogenes vs 83% in tumour suppressors. Moderate: 54% vs 73%." src="docs/figures/trust_curve_light.png">
 </picture>
 
 ## The problem in 30 seconds
@@ -47,8 +47,31 @@ separately for each predictor and each gene type.**
 ## Results so far
 
 > v0 numbers, research use only. Every number here is re-created by `uv run koel all`.
+> Confidence intervals marked **gene-level** resample whole genes, not single mutations
+> (`uv run koel robustness`); they are the honest ones, because mutations in the same
+> gene are not independent.
 
-### 1. The trust table
+### 1. Against lab measurements: the clearest result
+
+About 53,000 mutations measured in the lab (CC0, via MaveDB). For brake genes the question
+is "is the protein broken?". For gas-pedal genes it is "is the protein **switched on**?",
+measured as MAPK pathway activity in the [MAPK variant-effect atlas](https://doi.org/10.64898/2026.10.04.756099)
+(Simon et al. 2026, preprint), using the data authors' own activating / neutral / loss calls.
+
+| AlphaMissense AUROC (0.5 = coin flip) | Result | Gene-level 95% CI |
+|---|---|---|
+| Brakes (TP53, PTEN, BRCA1): broken vs normal | **0.85** (per gene 0.89–0.93) | 0.84–0.93 |
+| Gas pedals (KRAS, BRAF, EGFR, ERBB2, MAP2K1): switched on vs everything else | **0.68** (KRAS 0.51, ERBB2 0.51, EGFR 0.54) | 0.54–0.72 |
+| Gas pedals: switched on vs switched off | **0.43**: switched-**off** variants score *higher* (4 of 5 genes below 0.5) | 0.28–0.47 |
+
+Known hotspots (KRAS G12D, BRAF V600E, EGFR L858R, ERBB2 L755S, MAP2K1 Q56P) all score
+≥ 0.99, so the tools do notice *that* something changed. But in gas-pedal genes they cannot
+tell **on** from **off**, and a switched-off oncogene does not cause cancer. In the lab-data
+trust table, **no AlphaMissense or ESM1b score earns even supporting evidence for
+"switched on"**, while in brake genes AlphaMissense reaches moderate. ESM1b behaves the same.
+This holds when whole genes are resampled, but rests on only 5 gas-pedal and 3 brake genes.
+
+### 2. The trust table (expert labels)
 
 The AlphaMissense score that earns each level of evidence (one-sided 95% bootstrap
 bound on local likelihood ratios; [method](src/koel/calibrate.py)):
@@ -59,41 +82,23 @@ bound on local likelihood ratios; [method](src/koel/calibrate.py)):
 | Moderate (+2 points) | score ≥ **0.982**, reached by 54% | score ≥ **0.943**, reached by 73% |
 | Benign supporting (−1 point) | score ≤ 0.269 | score ≤ 0.284 |
 
-**In oncogenes the same evidence needs a higher score, and fewer real cancer mutations
-get there.** Thresholds re-learnt without any mutation classified after AlphaMissense
-was released held up on those held-out mutations at both levels.
+The point estimates put oncogene thresholds higher, but these bounds resample mutations,
+not genes. **The oncogene-versus-tumour-suppressor difference is not statistically clear
+at the gene level**, so read the two columns as estimates, not a proven gap.
 The full table (including ESM1b) is written to `data/processed/trust_table.csv`.
 
-### 2. Held-out test: mutations classified after AlphaMissense came out
+### 3. Held-out test: mutations classified after AlphaMissense came out
 
 361 ClinVar oncogenic calls made on or after 19 Sep 2023, none of them in CIViC:
 
-| AlphaMissense ≥ 0.792 | Oncogenes | Tumour suppressors |
+| AlphaMissense ≥ 0.792 | Oncogenes (53 genes) | Tumour suppressors (30 genes) |
 |---|---|---|
-| Cancer mutations caught | 81% (95% CI 74–87%) | 86% (81–90%) |
+| Cancer mutations caught | 81% | 86% |
 | Common harmless variants wrongly flagged | 6.0% | 3.7% |
 
-Same direction as the trust table, but the confidence intervals overlap. That is why
-Koel reports evidence strengths with bounds, not single accuracy numbers.
-
-### 3. Against lab measurements: the clearest result
-
-About 53,000 mutations measured in the lab (CC0, via MaveDB). For brake genes the question
-is "is the protein broken?". For gas-pedal genes it is "is the protein **switched on**?",
-measured as MAPK pathway activity in the [MAPK variant-effect atlas](https://doi.org/10.64898/2026.10.04.756099)
-(Simon et al. 2026, preprint), using the data authors' own activating / neutral / loss calls.
-
-| AlphaMissense AUROC (0.5 = coin flip) | Result |
-|---|---|
-| Brakes (TP53, PTEN, BRCA1): broken vs normal | **0.85** (per gene 0.89–0.93) |
-| Gas pedals (KRAS, BRAF, EGFR, ERBB2, MAP2K1): switched on vs everything else | **0.68** (KRAS 0.51, ERBB2 0.51, EGFR 0.54) |
-| Gas pedals: switched on vs switched off | **0.43**: switched-**off** variants score *higher* |
-
-Known hotspots (KRAS G12D, BRAF V600E, EGFR L858R, ERBB2 L755S, MAP2K1 Q56P) all score
-≥ 0.99, so the tools do notice *that* something changed. But in gas-pedal genes they cannot
-tell **on** from **off**, and a switched-off oncogene does not cause cancer. In the lab-data
-trust table, **no AlphaMissense or ESM1b score earns even supporting evidence for
-"switched on"**, while in brake genes AlphaMissense reaches moderate. ESM1b behaves the same.
+The difference (−4.8 points) has a gene-level 95% CI of −13.5 to +16.5: **no clear
+difference** between gene types on expert labels. An independent analysis (Lee, OncoCal,
+in revision) reaches the same conclusion: the direction agrees, the evidence is weak.
 
 ### Known limitations
 
@@ -124,6 +129,7 @@ Or one step at a time:
 | `uv run koel analyse` | accuracy (AUROC) per gene type |
 | `uv run koel lab` | compare with lab-measured function |
 | `uv run koel timesplit` | held-out test on calls made after AlphaMissense |
+| `uv run koel robustness` | gene-level confidence intervals for headline claims |
 | `uv run koel trust` | the trust table |
 | `uv run --group figures koel figures` | redraw the README chart |
 
@@ -176,6 +182,9 @@ Data files are downloaded, never committed. Koel's **code** is MIT licensed. Any
 - [x] Open, reproducible data pipeline
 - [x] Accuracy per gene type, lab comparison, held-out time split
 - [x] Trust table v0 (AlphaMissense, ESM1b)
+- [x] Gene-level (cluster) bootstrap for headline claims
+- [ ] Gene-level bootstrap inside the trust-table calibration
+- [ ] OncoCal out-of-fold scores as a baseline to beat
 - [ ] More predictors, where their licences allow
 - [x] Lab data for oncogenes (MAPK atlas: KRAS, BRAF, EGFR, ERBB2, MAP2K1)
 - [ ] Expert-confirmed benign labels to replace population negatives
@@ -198,10 +207,14 @@ Open an [issue](https://github.com/notaaaronfr/koel/issues), or see
 
 ## Prior work
 
-Koel builds on, and does not claim discovery of, the predictor gap reported in
+Koel builds on, and does not claim discovery of, the predictor gap described in
 Lee, *An openly licensed benchmark and per-gene calibration map for missense
 pathogenicity predictors on activating cancer drivers*, bioRxiv (23 Jul 2026),
 [doi:10.64898/2026.07.16.739080](https://doi.org/10.64898/2026.07.16.739080).
+That v1 preprint is superseded by a revised manuscript under review; per its author,
+the gap is now reported as descriptive and v1's per-gene thresholds should not be used.
+OncoCal's code and out-of-fold scores are public (MIT,
+[Zenodo 10.5281/zenodo.20741850](https://doi.org/10.5281/zenodo.20741850)).
 Calibration follows Tavtigian et al. 2018 and Pejaver et al. 2022.
 
 ## Citation

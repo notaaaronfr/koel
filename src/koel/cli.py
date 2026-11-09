@@ -34,6 +34,7 @@ def _cmd_all(args: argparse.Namespace) -> int:
                         ("Accuracy per gene type", analysis.summarise),
                         ("Lab-measured function", analysis.lab_tested),
                         ("Held-out time split", analysis.time_split),
+                        ("Gene-level robustness", analysis.robustness),
                         ("Trust table", calibrate.build)]:
         print(f"\n=== {title} ===")
         step()
@@ -61,6 +62,9 @@ def main(argv: list[str] | None = None) -> int:
 
     ts = sub.add_parser("timesplit", help="held-out test on oncogenic calls made after AlphaMissense's release")
     ts.set_defaults(func=lambda a: (__import__("koel.analysis", fromlist=["time_split"]).time_split(), 0)[1])
+
+    rb = sub.add_parser("robustness", help="gene-level (cluster) bootstrap for the headline claims")
+    rb.set_defaults(func=lambda a: (__import__("koel.analysis", fromlist=["robustness"]).robustness(), 0)[1])
 
     tt = sub.add_parser("trust", help="trust table: evidence strength per predictor and gene type")
     tt.set_defaults(func=lambda a: (__import__("koel.calibrate", fromlist=["build"]).build(), 0)[1])
