@@ -62,7 +62,7 @@ measured as MAPK pathway activity in the [MAPK variant-effect atlas](https://doi
 |---|---|---|
 | Brakes (TP53, PTEN, BRCA1): broken vs normal | **0.85** (per gene 0.89–0.93) | 0.84–0.93 |
 | Gas pedals (KRAS, BRAF, EGFR, ERBB2, MAP2K1): switched on vs everything else | **0.68** (KRAS 0.51, ERBB2 0.51, EGFR 0.54) | 0.54–0.72 |
-| Gas pedals: switched on vs switched off | **0.43**: switched-**off** variants score *higher* (4 of 5 genes below 0.5) | 0.28–0.47 |
+| Gas pedals: switched on vs switched off | **0.43**: switched-**off** variants score *higher*; the interval stays below 0.5 | 0.28–0.47 |
 
 Known hotspots (KRAS G12D, BRAF V600E, EGFR L858R, ERBB2 L755S, MAP2K1 Q56P) all score
 ≥ 0.99, so the tools do notice *that* something changed. But in gas-pedal genes they cannot

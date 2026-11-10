@@ -268,5 +268,5 @@ def robustness() -> pd.DataFrame:
     res.to_csv(PROCESSED / "robustness_gene_level.csv", index=False)
     with pd.option_context("display.float_format", "{:.3f}".format, "display.width", 200):
         print(res.to_string(index=False))
-    print("\nWhole genes resampled. With 3-5 genes per lab group, treat these as indicative.")
+    print("\nWhole genes resampled. With 3-5 genes per lab group, read the intervals, not the point estimates.")
     return res
