@@ -10,14 +10,20 @@ Method (after Tavtigian 2018 / Pejaver 2022, v0):
     ~10% of labelled variants), LR = P(near t | oncogenic) / P(near t | benign).
     Local, not "at or past t": a cumulative LR lets very high scores lend evidence to
     middling ones, which the first version of this module got wrong.
-  * Bootstrap (2,000 resamples). A threshold earns a strength only if the one-sided 95%
-    lower bound of the local LR clears the cut-off at t AND at every higher score
-    (benign side: upper bound below the reciprocal at t and every lower score).
+  * Bootstrap (2,000 resamples) of whole genes, not single variants. Variants in one
+    gene are not independent, and a few genes carry many of the labels, so resampling
+    variants gives intervals that are too narrow. A threshold earns a strength only if
+    the one-sided 95% lower bound of the local LR clears the cut-off at t AND at every
+    higher score (benign side: upper bound below the reciprocal at t and every lower
+    score). The variant-level threshold is kept in ``threshold_variant_level`` so the
+    cost of the honest interval is visible.
   * Cut-offs (Tavtigian 2018 OddsPath): supporting 2.08, moderate 4.33, strong 18.7,
     very strong 350. Points as in the somatic SOP: 1, 2, 4, 8.
   * The threshold reported is the loosest one that reaches the strength.
 
 Caveats printed with every run:
+  * With only 3-5 genes (the lab sets) a gene bootstrap is coarse: read those rows as
+    "what survives if any one gene is dropped or doubled", not as a precise interval.
   * Windowed LRs are a simplification of Pejaver's kernel-smoothed local posteriors.
   * Negatives are mostly common gnomAD variants, which AlphaMissense saw as "benign"
     in training, so LRs are optimistic, more so on the benign side.
@@ -66,6 +72,7 @@ def _local_lr(pos: np.ndarray, neg: np.ndarray, lo: np.ndarray, hi: np.ndarray) 
 
 
 def _boot_bounds(pos, neg, lo, hi, seed=11):
+    """Variant-level bootstrap: every variant treated as independent."""
     rng = np.random.default_rng(seed)
     b = np.array([_local_lr(rng.choice(pos, len(pos)), rng.choice(neg, len(neg)), lo, hi)
                   for _ in range(N_BOOT)])
@@ -73,36 +80,79 @@ def _boot_bounds(pos, neg, lo, hi, seed=11):
     return np.percentile(b, 5, axis=0), np.percentile(b, 95, axis=0)
 
 
+def _window_counts(x: np.ndarray, genes: np.ndarray, names: np.ndarray, lo, hi):
+    """Per gene: how many of its variants fall in each window, and how many it has."""
+    counts = np.zeros((len(names), len(lo)))
+    totals = np.zeros(len(names))
+    for i, g in enumerate(names):
+        s = np.sort(x[genes == g])
+        counts[i] = np.searchsorted(s, hi, "right") - np.searchsorted(s, lo, "left")
+        totals[i] = len(s)
+    return counts, totals
+
+
+def _gene_boot_bounds(pos, neg, pos_genes, neg_genes, lo, hi, seed=11):
+    """Gene-level (cluster) bootstrap: resample whole genes with replacement."""
+    names = np.unique(np.r_[pos_genes, neg_genes])
+    pc, pn = _window_counts(pos, pos_genes, names, lo, hi)
+    qc, qn = _window_counts(neg, neg_genes, names, lo, hi)
+    rng = np.random.default_rng(seed)
+    g = len(names)
+    m = rng.multinomial(g, np.full(g, 1 / g), size=N_BOOT).astype(float)  # gene multiplicities
+    eps = 0.5
+    b = ((m @ pc + eps) / (m @ pn + eps)[:, None]) / ((m @ qc + eps) / (m @ qn + eps)[:, None])
+    return np.percentile(b, 5, axis=0), np.percentile(b, 95, axis=0)
+
+
+def _loosest(lb, ub, direction: str, cut: float):
+    """Index of the loosest grid point that earns ``cut``, or None.
+
+    A threshold earns a strength only if every score beyond it does too: running minimum
+    of the lower bound from the top, running maximum of the upper bound from the bottom.
+    """
+    if direction == "oncogenic":
+        ok = np.where(np.minimum.accumulate(lb[::-1])[::-1] >= cut)[0]
+        return ok[0] if len(ok) else None
+    ok = np.where(np.maximum.accumulate(ub) <= 1 / cut)[0]
+    return ok[-1] if len(ok) else None
+
+
+def _fmt(t: float, direction: str, sign: float) -> str:
+    op = ">=" if (direction == "oncogenic") == (sign > 0) else "<="
+    return f"{op}{sign * t:.3f}"
+
+
 def trust_rows(pos: np.ndarray, neg: np.ndarray, sign: float, labels: str, role: str,
-               predictor: str) -> list[dict]:
+               predictor: str, pos_genes: np.ndarray | None = None,
+               neg_genes: np.ndarray | None = None) -> list[dict]:
+    """Thresholds per strength. With gene names, bounds come from resampling whole genes."""
     grid, lo, hi = _windows(pos, neg)
     lr = _local_lr(pos, neg, lo, hi)
-    lb, ub = _boot_bounds(pos, neg, lo, hi)
-    # A threshold earns a strength only if every score beyond it does too:
-    # running minimum of the lower bound from the top, maximum of the upper from the bottom.
-    lb_tail = np.minimum.accumulate(lb[::-1])[::-1]
-    ub_tail = np.maximum.accumulate(ub)
+    v_lb, v_ub = _boot_bounds(pos, neg, lo, hi)
+    by_gene = pos_genes is not None and neg_genes is not None
+    lb, ub = _gene_boot_bounds(pos, neg, pos_genes, neg_genes, lo, hi) if by_gene else (v_lb, v_ub)
     base = {"labels": labels, "gene_role": role, "predictor": predictor,
-            "n_oncogenic": len(pos), "n_benign": len(neg)}
+            "n_oncogenic": len(pos), "n_benign": len(neg),
+            "resampling": "genes" if by_gene else "variants",
+            "n_genes": len(np.unique(np.r_[pos_genes, neg_genes])) if by_gene else np.nan}
     rows = []
     for direction in ("oncogenic", "benign"):
         for name, cut, pts in STRENGTHS:
-            ok = np.where(lb_tail >= cut)[0] if direction == "oncogenic" else \
-                np.where(ub_tail <= 1 / cut)[0]
+            j = _loosest(v_lb, v_ub, direction, cut)
             row = {**base, "direction": direction, "strength": name,
-                   "points": pts if direction == "oncogenic" else -pts}
-            if not len(ok):
+                   "points": pts if direction == "oncogenic" else -pts,
+                   "threshold_variant_level":
+                       "not reached" if j is None else _fmt(grid[j], direction, sign)}
+            i = _loosest(lb, ub, direction, cut)
+            if i is None:
                 rows.append({**row, "threshold": "not reached"})
                 continue
-            i = ok[0] if direction == "oncogenic" else ok[-1]  # loosest qualifying
             t = grid[i]
             if direction == "oncogenic":
-                op, reach_p, reach_n, bound = ">=", (pos >= t).mean(), (neg >= t).mean(), lb[i]
+                reach_p, reach_n, bound = (pos >= t).mean(), (neg >= t).mean(), lb[i]
             else:
-                op, reach_p, reach_n, bound = "<=", (pos <= t).mean(), (neg <= t).mean(), ub[i]
-            if sign < 0:
-                op = "<=" if op == ">=" else ">="
-            rows.append({**row, "threshold": f"{op}{sign * t:.3f}", "local_lr": lr[i],
+                reach_p, reach_n, bound = (pos <= t).mean(), (neg <= t).mean(), ub[i]
+            rows.append({**row, "threshold": _fmt(t, direction, sign), "local_lr": lr[i],
                          "lr_bound": bound, "share_oncogenic_reached": float(reach_p),
                          "share_benign_reached": float(reach_n)})
     return rows
@@ -121,11 +171,14 @@ def _table(d: pd.DataFrame, labels: str, roles: list[str], label_col: str = "lab
     for role in roles:
         sub = d if role == "all" else d[d["gene_role"] == role]
         for name, (col, sign) in PREDICTORS.items():
-            pos = sign * sub.loc[sub[label_col] == 1, col].to_numpy()
-            neg = sign * sub.loc[sub[label_col] == 0, col].to_numpy()
+            is_pos, is_neg = sub[label_col] == 1, sub[label_col] == 0
+            pos = sign * sub.loc[is_pos, col].to_numpy()
+            neg = sign * sub.loc[is_neg, col].to_numpy()
             if len(pos) < MIN_PER_CLASS or len(neg) < MIN_PER_CLASS:
                 continue
-            rows += trust_rows(pos, neg, sign, labels, role, name)
+            rows += trust_rows(pos, neg, sign, labels, role, name,
+                               sub.loc[is_pos, "gene"].to_numpy(),
+                               sub.loc[is_neg, "gene"].to_numpy())
     return rows
 
 
@@ -187,8 +240,8 @@ def build() -> pd.DataFrame:
     val.to_csv(PROCESSED / "trust_table_validation.csv", index=False)
 
     show = res[res["threshold"] != "not reached"][
-        ["labels", "gene_role", "predictor", "direction", "strength", "points", "threshold",
-         "local_lr", "lr_bound", "share_oncogenic_reached", "share_benign_reached"]]
+        ["labels", "gene_role", "n_genes", "predictor", "direction", "strength", "points",
+         "threshold", "threshold_variant_level", "local_lr", "lr_bound", "share_oncogenic_reached", "share_benign_reached"]]
     with pd.option_context("display.float_format", "{:.2f}".format, "display.width", 220,
                            "display.max_rows", 200):
         print(show.to_string(index=False))
@@ -198,6 +251,8 @@ def build() -> pd.DataFrame:
                 .agg(", ".join).to_string())
         print("\nHeld-out check (thresholds learnt without post-release positives):")
         print(val.to_string(index=False))
+    print("\nBounds resample whole genes; threshold_variant_level is what resampling single"
+          " variants would have given.")
     print("\nlocal_lr = LR among variants scoring near the threshold; lr_bound = its one-sided"
           " 95% bound, which must clear the cut-off at the threshold and every score beyond.")
     print("Negatives are mostly common gnomAD variants: LRs are optimistic. Research use only.")

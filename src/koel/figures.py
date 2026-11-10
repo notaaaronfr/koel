@@ -102,7 +102,7 @@ def build() -> None:
         ax.set_ylim(0.03, 100)
         ax.set_xlabel("AlphaMissense score")
         ax.set_ylabel("Evidence for 'oncogenic' (local likelihood ratio)")
-        ax.set_title("Expert labels: point estimates only", loc="left", fontsize=13,
+        ax.set_title("Expert labels: point estimates", loc="left", fontsize=13,
                      fontweight="bold", color=th["ink"])
         ax.grid(False)
 
@@ -127,7 +127,7 @@ def build() -> None:
                   bbox_to_anchor=(-0.02, -0.12), ncol=1, fontsize=9, labelcolor=th["ink2"])
 
         fig.text(0.01, 0.01, "Koel v0 · expert labels (CIViC, ClinVar) + common gnomAD negatives · "
-                 "research use only", color=th["ink2"], fontsize=8)
+                 "bars use bounds that resample whole genes · research use only", color=th["ink2"], fontsize=8)
         fig.tight_layout(rect=(0, 0.04, 1, 1))
         path = OUT / f"trust_curve_{mode}.png"
         fig.savefig(path, facecolor=th["surface"])

@@ -26,7 +26,7 @@ It depends on the gene. Koel measures how much.*
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="docs/figures/trust_curve_dark.png">
-  <img alt="Two charts based on expert labels (point estimates, not significant at gene level). Left: the evidence an AlphaMissense score gives that a mutation is cancer-causing, plotted against the score, for oncogenes and tumour suppressors. Above about 0.9 the tumour suppressor curve rises faster. Right: share of known cancer-causing mutations that earn evidence points. Supporting: 77% in oncogenes vs 83% in tumour suppressors. Moderate: 54% vs 73%." src="docs/figures/trust_curve_light.png">
+  <img alt="Two charts based on expert labels. Left: the evidence an AlphaMissense score gives that a mutation is cancer-causing, plotted against the score, for oncogenes and tumour suppressors (point estimates). The two curves stay close until about 0.9, where the tumour suppressor curve rises faster. Right: share of known cancer-causing mutations that earn evidence points when whole genes are resampled. Supporting: 75% in oncogenes vs 77% in tumour suppressors. Moderate: 50% vs 34%." src="docs/figures/trust_curve_light.png">
 </picture>
 
 ## The problem in 30 seconds
@@ -73,19 +73,26 @@ This holds when whole genes are resampled, but rests on only 5 gas-pedal and 3 b
 
 ### 2. The trust table (expert labels)
 
-The AlphaMissense score that earns each level of evidence (one-sided 95% bootstrap
-bound on local likelihood ratios; [method](src/koel/calibrate.py)):
+The AlphaMissense score that earns each level of evidence (one-sided 95% bound on local
+likelihood ratios, **resampling whole genes**: 79 oncogenes, 47 tumour suppressors;
+[method](src/koel/calibrate.py)):
 
 | Evidence level | Oncogenes (gas pedal) | Tumour suppressors (brakes) |
 |---|---|---|
-| Supporting (+1 point) | score ≥ **0.885**, reached by 77% of cancer mutations | score ≥ **0.830**, reached by 83% |
-| Moderate (+2 points) | score ≥ **0.982**, reached by 54% | score ≥ **0.943**, reached by 73% |
-| Benign supporting (−1 point) | score ≤ 0.269 | score ≤ 0.284 |
+| Supporting (+1 point) | score ≥ **0.903**, reached by 75% of cancer mutations | score ≥ **0.913**, reached by 77% |
+| Moderate (+2 points) | score ≥ **0.987**, reached by 50% | score ≥ **0.998**, reached by 34% |
+| Strong (+4 points) | not reached | not reached |
+| Benign supporting (−1 point) | score ≤ 0.246 | score ≤ 0.158 |
 
-The point estimates put oncogene thresholds higher, but these bounds resample mutations,
-not genes. **The oncogene-versus-tumour-suppressor difference is not statistically clear
-at the gene level**, so read the two columns as estimates, not a proven gap.
-The full table (including ESM1b) is written to `data/processed/trust_table.csv`.
+**On expert labels, oncogenes do not need a higher score than tumour suppressors.** An
+earlier version of this table resampled single mutations and gave looser thresholds
+(moderate: ≥ 0.982 vs ≥ 0.943), which looked like a higher bar in oncogenes. That gap came
+from treating mutations in the same gene as independent, and it disappears when whole genes
+are resampled. At moderate strength the tumour suppressors now need the higher score; Koel
+has not tested whether that difference is itself reliable.
+
+The full table (including ESM1b) is written to `data/processed/trust_table.csv`. Its
+`threshold_variant_level` column keeps the older, looser thresholds for comparison.
 
 ### 3. Held-out test: mutations classified after AlphaMissense came out
 
@@ -98,7 +105,7 @@ The full table (including ESM1b) is written to `data/processed/trust_table.csv`.
 
 The difference (−4.8 points) has a gene-level 95% CI of −13.5 to +16.5: **no clear
 difference** between gene types on expert labels. An independent analysis (Lee, OncoCal,
-in revision) reaches the same conclusion: the direction agrees, the evidence is weak.
+in revision) reaches the same conclusion.
 
 ### Known limitations
 
@@ -183,7 +190,7 @@ Data files are downloaded, never committed. Koel's **code** is MIT licensed. Any
 - [x] Accuracy per gene type, lab comparison, held-out time split
 - [x] Trust table v0 (AlphaMissense, ESM1b)
 - [x] Gene-level (cluster) bootstrap for headline claims
-- [ ] Gene-level bootstrap inside the trust-table calibration
+- [x] Gene-level bootstrap inside the trust-table calibration
 - [ ] OncoCal out-of-fold scores as a baseline to beat
 - [ ] More predictors, where their licences allow
 - [x] Lab data for oncogenes (MAPK atlas: KRAS, BRAF, EGFR, ERBB2, MAP2K1)
